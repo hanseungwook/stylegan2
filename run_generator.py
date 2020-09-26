@@ -11,8 +11,33 @@ import dnnlib
 import dnnlib.tflib as tflib
 import re
 import sys
+from tqdm import tqdm
 
 import pretrained_networks
+
+def normalize_img(data, range=None, scale_each=False):
+    data = data.clone()  # avoid modifying tensor in-place
+    if range is not None:
+        assert isinstance(range, tuple), \
+            "range has to be a tuple (min, max) if specified. min and max are numbers"
+
+    def norm_ip(img, min, max):
+        img.clamp_(min=min, max=max)
+        img.add_(-min).div_(max - min + 1e-5)
+
+    def norm_range(t, range):
+        if range is not None:
+            norm_ip(t, range[0], range[1])
+        else:
+            norm_ip(t, float(t.min()), float(t.max()))
+
+    if scale_each is True:
+        for t in data:  # loop over mini-batch dimension
+            norm_range(t, range)
+    else:
+        norm_range(data, range)
+
+    return data
 
 #----------------------------------------------------------------------------
 
@@ -20,6 +45,7 @@ def generate_images(network_pkl, seeds, truncation_psi):
     print('Loading networks from "%s"...' % network_pkl)
     _G, _D, Gs = pretrained_networks.load_networks(network_pkl)
     noise_vars = [var for name, var in Gs.components.synthesis.vars.items() if name.startswith('noise')]
+    samples = []
 
     Gs_kwargs = dnnlib.EasyDict()
     Gs_kwargs.output_transform = dict(func=tflib.convert_images_to_uint8, nchw_to_nhwc=True)
@@ -27,13 +53,18 @@ def generate_images(network_pkl, seeds, truncation_psi):
     if truncation_psi is not None:
         Gs_kwargs.truncation_psi = truncation_psi
 
-    for seed_idx, seed in enumerate(seeds):
+    for seed_idx, seed in tqdm(enumerate(seeds)):
         print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
         rnd = np.random.RandomState(seed)
         z = rnd.randn(1, *Gs.input_shape[1:]) # [minibatch, component]
         tflib.set_vars({var: rnd.randn(*var.shape.as_list()) for var in noise_vars}) # [height, width]
         images = Gs.run(z, None, **Gs_kwargs) # [minibatch, height, width, channel]
-        PIL.Image.fromarray(images[0], 'RGB').save(dnnlib.make_run_dir_path('seed%04d.png' % seed))
+        images_norm = normalize_img(images)
+        samples.append(images_norm.numpy())
+        # PIL.Image.fromarray(images[0], 'RGB').save(dnnlib.make_run_dir_path('seed%04d.png' % seed))
+    
+    samples = np.stack(samples, axis=0)
+    np.savez('./samples.npz', **{'x' : samples})
 
 #----------------------------------------------------------------------------
 

@@ -59,13 +59,12 @@ def generate_images(network_pkl, seeds, truncation_psi):
         z = rnd.randn(1, *Gs.input_shape[1:]) # [minibatch, component]
         tflib.set_vars({var: rnd.randn(*var.shape.as_list()) for var in noise_vars}) # [height, width]
         images = Gs.run(z, None, **Gs_kwargs) # [minibatch, height, width, channel]
-        print(image.shape)
-        images_norm = normalize_img(images)
-        samples.append(images_norm.numpy())
+        images_norm = normalize_img(images.squeeze().transpose(2, 0, 1)) # [channel, height, width]
+        samples.append(images_norm)
         # PIL.Image.fromarray(images[0], 'RGB').save(dnnlib.make_run_dir_path('seed%04d.png' % seed))
     
     samples = np.stack(samples, axis=0)
-    np.savez('./samples.npz', **{'x' : samples})
+    np.savez('./stylegan2_samples_z{}.npz'.format(truncation_psi), **{'x' : samples})
 
 #----------------------------------------------------------------------------
 

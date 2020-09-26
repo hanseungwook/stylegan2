@@ -16,14 +16,14 @@ from tqdm import tqdm
 import pretrained_networks
 
 def normalize_img(data, range=None, scale_each=False):
-    data = data.clone()  # avoid modifying tensor in-place
+    data = data.copy()  # avoid modifying tensor in-place
     if range is not None:
         assert isinstance(range, tuple), \
             "range has to be a tuple (min, max) if specified. min and max are numbers"
 
     def norm_ip(img, min, max):
-        img.clamp_(min=min, max=max)
-        img.add_(-min).div_(max - min + 1e-5)
+        img.clip(min=min, max=max, out=img)
+        img = (img + (-min)) / (max - min + 1e-5)
 
     def norm_range(t, range):
         if range is not None:
@@ -59,6 +59,7 @@ def generate_images(network_pkl, seeds, truncation_psi):
         z = rnd.randn(1, *Gs.input_shape[1:]) # [minibatch, component]
         tflib.set_vars({var: rnd.randn(*var.shape.as_list()) for var in noise_vars}) # [height, width]
         images = Gs.run(z, None, **Gs_kwargs) # [minibatch, height, width, channel]
+        print(image.shape)
         images_norm = normalize_img(images)
         samples.append(images_norm.numpy())
         # PIL.Image.fromarray(images[0], 'RGB').save(dnnlib.make_run_dir_path('seed%04d.png' % seed))
